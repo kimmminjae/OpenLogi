@@ -1,7 +1,7 @@
 //! Persisting a change: the rollback on a read-only config and the agent reload that follows.
 
 use super::*;
-use openlogi_core::config::{ConfigFile, ConfigRevision, MouseProfileTarget};
+use openlogi_core::config::{ButtonRepeatRate, ConfigFile, ConfigRevision, MouseProfileTarget};
 use openlogi_core::update_feed::UpdateChannel;
 
 #[test]
@@ -19,6 +19,8 @@ fn read_only_config_rolls_back_mutations_and_does_not_reload_agent() {
     let _ = state.commit_mouse_profile_target(MouseProfileTarget::Focused);
     let _ = state.commit_lock_key_notifications(false);
     let _ = state.commit_animate_desktop_switch(false);
+    let _ = state.commit_hold_to_repeat(false);
+    let _ = state.commit_button_repeat_rate(ButtonRepeatRate::MAX);
 
     assert_eq!(
         state.app_settings().thumbwheel_sensitivity,
@@ -35,8 +37,56 @@ fn read_only_config_rolls_back_mutations_and_does_not_reload_agent() {
     );
     assert!(state.app_settings().lock_key_notifications);
     assert!(state.app_settings().animate_desktop_switch);
+    assert!(state.app_settings().hold_to_repeat);
+    assert_eq!(
+        state.app_settings().button_repeat_rate,
+        ButtonRepeatRate::DEFAULT
+    );
     assert_eq!(state.config_issue(), Some("invalid config"));
     assert!(receiver.try_recv().is_err());
+}
+
+#[test]
+fn button_repeat_settings_persist_and_reload_only_when_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(openlogi_core::paths::CONFIG_FILE);
+    let (config, file) = ConfigFile::load_from_path(&path).unwrap();
+    let resolver = AssetResolver::new();
+    let (commands, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    let mut state = AppState::new(Sources {
+        persistence: ConfigPersistence::UserFile(file),
+        ..Sources::in_memory(config, &resolver, commands)
+    });
+    assert!(matches!(
+        receiver.try_recv(),
+        Ok(crate::services::ipc::Command::LoadConfig(_))
+    ));
+    let _ = state.commit_button_repeat_rate(ButtonRepeatRate::MAX);
+    assert!(matches!(
+        receiver.try_recv(),
+        Ok(crate::services::ipc::Command::ReloadConfig(_))
+    ));
+    let _ = state.commit_button_repeat_rate(ButtonRepeatRate::MAX);
+    assert!(receiver.try_recv().is_err());
+    let _ = state.commit_hold_to_repeat(false);
+    assert!(matches!(
+        receiver.try_recv(),
+        Ok(crate::services::ipc::Command::ReloadConfig(_))
+    ));
+    let _ = state.commit_hold_to_repeat(false);
+    assert!(receiver.try_recv().is_err());
+    let restored = Config::load_from_path(&path).unwrap();
+    assert!(!restored.app_settings.hold_to_repeat);
+    assert_eq!(
+        restored.app_settings.button_repeat_rate,
+        ButtonRepeatRate::MAX
+    );
+    let _ = state.commit_hold_to_repeat(true);
+    assert!(state.app_settings().hold_to_repeat);
+    assert_eq!(
+        state.app_settings().button_repeat_rate,
+        ButtonRepeatRate::MAX
+    );
 }
 
 #[test]

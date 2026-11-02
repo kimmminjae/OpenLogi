@@ -45,10 +45,10 @@ pub use key_trigger::{KeyModifiers, KeyTrigger, KeyboardConfig, ParseTriggerErro
 pub use revision::ConfigRevision;
 pub use settings::LightSettings;
 pub use settings::{
-    AppIcon, AppSettings, Appearance, AssetSourcePreference, CameraControls, DeviceViewMode,
-    Lighting, MouseProfileTarget, SMARTSHIFT_AUTO_DISENGAGE_DEFAULT, SMARTSHIFT_MIN_AUTO_DISENGAGE,
-    ScrollResolution, SmartShift, ThumbwheelSensitivity, UiScale, VerticalScrollSensitivity,
-    WheelMode,
+    AppIcon, AppSettings, Appearance, AssetSourcePreference, ButtonRepeatRate, CameraControls,
+    DeviceViewMode, Lighting, MouseProfileTarget, SMARTSHIFT_AUTO_DISENGAGE_DEFAULT,
+    SMARTSHIFT_MIN_AUTO_DISENGAGE, ScrollResolution, SmartShift, ThumbwheelSensitivity, UiScale,
+    VerticalScrollSensitivity, WheelMode,
 };
 
 use crate::app::AppAliases;
@@ -58,6 +58,9 @@ use crate::binding::{Binding, ButtonId, GestureDirection};
 /// The schema version the current build produces. Bumped whenever the
 /// persisted shape or enum vocabulary changes; readers inspect this value
 /// before consuming the rest of the file.
+///
+/// v11 adds app-wide hold-to-repeat enable and steady button-repeat rate
+/// preferences. Older files default to enabled at twenty repeats per second.
 ///
 /// v10 adds per-device [`DeviceConfig::disabled_keys`]. Older files omit the
 /// setting and leave the firmware unmanaged. The bump makes a v9 build reject
@@ -117,7 +120,7 @@ use crate::binding::{Binding, ButtonId, GestureDirection};
 /// next save; [`Config::load_from_path`] accepts supported versions `1` through
 /// [`SCHEMA_VERSION`] so an invalid or forward file fails loudly instead of
 /// silently losing bindings.
-pub const SCHEMA_VERSION: u32 = 10;
+pub const SCHEMA_VERSION: u32 = 11;
 
 /// Top-level config document.
 #[derive(Debug, Clone, Serialize, Deserialize)]

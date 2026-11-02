@@ -120,7 +120,7 @@ impl WheelHoldBinding {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Binding {
-    /// One action, fired on press. The shape every non-gesture button uses.
+    /// One action, fired on press. Repeatable actions also fire while held.
     Single(Action),
     /// Per-direction sub-bindings for a button in gesture mode. Keyed by the
     /// committed swipe direction, with [`GestureDirection::Click`] holding the

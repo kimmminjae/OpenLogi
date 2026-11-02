@@ -239,6 +239,10 @@ select_device_button_description = "Wybierz przycisk na urządzeniu, aby zmieni�
 remove_profile_description = "Spowoduje to usunięcie własnych przypisań przycisków w tym profilu. Domyślne przypisania pozostaną bez zmian."
 
 [pointer]
+hold_to_repeat = "Repeat while holding"
+hold_to_repeat_description = "Hold a mapped volume or scroll button to repeat after 400 ms. Applies to all devices; taps still perform one step."
+button_repeat_speed = "Repeat speed"
+button_repeat_rate = "%{rate} repeats/s"
 mouse_button_profiles = "Profile przycisków myszy"
 mouse_profile_pointer = "Wskaźnik myszy"
 mouse_profile_focused = "Aktywna aplikacja"

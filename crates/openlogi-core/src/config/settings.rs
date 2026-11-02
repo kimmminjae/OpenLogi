@@ -308,6 +308,92 @@ pub struct AppSettings {
     /// Logi Options+; off switches instantly. Only macOS reads it.
     #[serde(default = "default_true")]
     pub animate_desktop_switch: bool,
+    /// Repeat eligible volume and scroll actions while their button is held.
+    #[serde(default = "default_true")]
+    pub hold_to_repeat: bool,
+    /// Steady action rate after the hold threshold, in repeats per second.
+    #[serde(default)]
+    pub button_repeat_rate: ButtonRepeatRate,
+}
+
+/// Validated steady repeat rate for held volume and scroll buttons.
+#[nutype(
+    const_fn,
+    validate(greater_or_equal = BUTTON_REPEAT_MIN, less_or_equal = BUTTON_REPEAT_MAX),
+    derive(
+        Debug,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        TryFrom,
+        Into,
+        Display,
+        Serialize,
+        Deserialize
+    )
+)]
+pub struct ButtonRepeatRate(u8);
+
+const BUTTON_REPEAT_MIN: u8 = 2;
+const BUTTON_REPEAT_MAX: u8 = 50;
+const BUTTON_REPEAT_DEFAULT: u8 = 20;
+
+impl ButtonRepeatRate {
+    /// Slowest selectable rate: two repeats per second.
+    pub const MIN: Self = match Self::try_new(BUTTON_REPEAT_MIN) {
+        Ok(value) => value,
+        Err(_) => panic!("valid minimum button repeat rate"),
+    };
+    /// Fastest selectable rate: fifty repeats per second.
+    pub const MAX: Self = match Self::try_new(BUTTON_REPEAT_MAX) {
+        Ok(value) => value,
+        Err(_) => panic!("valid maximum button repeat rate"),
+    };
+    /// Default rate: twenty repeats per second.
+    pub const DEFAULT: Self = match Self::try_new(BUTTON_REPEAT_DEFAULT) {
+        Ok(value) => value,
+        Err(_) => panic!("valid default button repeat rate"),
+    };
+
+    /// Round and clamp a slider position into the selectable range.
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "slider value is rounded and clamped to the validated 2..=50 range"
+    )]
+    pub fn from_rounded(value: f32) -> Self {
+        let raw = if value.is_nan() {
+            BUTTON_REPEAT_MIN
+        } else {
+            value
+                .round()
+                .clamp(f32::from(BUTTON_REPEAT_MIN), f32::from(BUTTON_REPEAT_MAX)) as u8
+        };
+        match Self::try_new(raw) {
+            Ok(rate) => rate,
+            Err(_) => unreachable!("clamped button repeat rate is valid"),
+        }
+    }
+
+    /// Interval between consecutive repeats.
+    #[must_use]
+    pub fn interval(self) -> std::time::Duration {
+        std::time::Duration::from_secs_f64(1. / f64::from(self.into_inner()))
+    }
+}
+
+impl Default for ButtonRepeatRate {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+impl From<ButtonRepeatRate> for f32 {
+    fn from(rate: ButtonRepeatRate) -> Self {
+        Self::from(rate.into_inner())
+    }
 }
 
 const SENSITIVITY_MIN: u8 = 1;
@@ -514,6 +600,8 @@ impl Default for AppSettings {
             low_battery_notifications: true,
             lock_key_notifications: true,
             animate_desktop_switch: true,
+            hold_to_repeat: true,
+            button_repeat_rate: ButtonRepeatRate::DEFAULT,
         }
     }
 }

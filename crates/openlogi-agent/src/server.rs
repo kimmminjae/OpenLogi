@@ -119,6 +119,8 @@ impl AgentServer {
                 #[cfg(target_os = "macos")]
                 let show_in_menu_bar = config.app_settings.show_in_menu_bar;
                 let language = config.app_settings.language.clone();
+                self.dispatcher
+                    .configure_button_repeat(&config.app_settings);
                 match saved {
                     None => self.orchestrator.lock().await.reload_config(config),
                     Some(saved) => self

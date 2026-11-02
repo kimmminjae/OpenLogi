@@ -239,6 +239,10 @@ select_device_button_description = "動作を変更するボタンをデバイ�
 remove_profile_description = "このプロファイルのカスタムボタン割り当てを削除します。デフォルトの割り当てには影響しません。"
 
 [pointer]
+hold_to_repeat = "Repeat while holding"
+hold_to_repeat_description = "Hold a mapped volume or scroll button to repeat after 400 ms. Applies to all devices; taps still perform one step."
+button_repeat_speed = "Repeat speed"
+button_repeat_rate = "%{rate} repeats/s"
 mouse_button_profiles = "マウスボタンのプロファイル"
 mouse_profile_pointer = "マウスポインター"
 mouse_profile_focused = "フォーカス中のアプリ"

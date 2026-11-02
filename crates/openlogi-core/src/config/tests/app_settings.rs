@@ -4,6 +4,63 @@ use super::*;
 use crate::update_feed::UpdateChannel;
 
 #[test]
+fn button_repeat_settings_default_for_old_configs_and_roundtrip() {
+    let old: Config = toml::from_str("schema_version = 10\n").unwrap();
+    assert!(old.app_settings.hold_to_repeat);
+    assert_eq!(
+        old.app_settings.button_repeat_rate,
+        ButtonRepeatRate::DEFAULT
+    );
+    for enabled in [true, false] {
+        for rate in [
+            ButtonRepeatRate::MIN,
+            ButtonRepeatRate::DEFAULT,
+            ButtonRepeatRate::MAX,
+        ] {
+            let mut config = Config::default();
+            config.app_settings.hold_to_repeat = enabled;
+            config.app_settings.button_repeat_rate = rate;
+            let restored = write_and_read(&config);
+            assert_eq!(restored.app_settings.hold_to_repeat, enabled);
+            assert_eq!(restored.app_settings.button_repeat_rate, rate);
+        }
+    }
+}
+
+#[test]
+fn button_repeat_rate_validates_file_values_and_rounds_slider_positions() {
+    for raw in [0, 1, 51, 255] {
+        let text = format!("schema_version = 11\n[app_settings]\nbutton_repeat_rate = {raw}\n");
+        assert!(
+            toml::from_str::<Config>(&text).is_err(),
+            "invalid rate {raw} must be rejected"
+        );
+    }
+    for (raw, expected) in [
+        (f32::NAN, 2),
+        (-100., 2),
+        (2.4, 2),
+        (19.6, 20),
+        (50., 50),
+        (100., 50),
+    ] {
+        assert_eq!(u8::from(ButtonRepeatRate::from_rounded(raw)), expected);
+    }
+    assert_eq!(
+        ButtonRepeatRate::MIN.interval(),
+        std::time::Duration::from_millis(500)
+    );
+    assert_eq!(
+        ButtonRepeatRate::DEFAULT.interval(),
+        std::time::Duration::from_millis(50)
+    );
+    assert_eq!(
+        ButtonRepeatRate::MAX.interval(),
+        std::time::Duration::from_millis(20)
+    );
+}
+
+#[test]
 fn mouse_profile_target_defaults_for_old_configs_and_roundtrips() {
     for body in [
         "schema_version = 7\n",

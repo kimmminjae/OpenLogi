@@ -239,6 +239,10 @@ select_device_button_description = "Sélectionnez un bouton de l’appareil pour
 remove_profile_description = "Les affectations personnalisées de ce profil seront supprimées. Celles par défaut ne seront pas modifiées."
 
 [pointer]
+hold_to_repeat = "Repeat while holding"
+hold_to_repeat_description = "Hold a mapped volume or scroll button to repeat after 400 ms. Applies to all devices; taps still perform one step."
+button_repeat_speed = "Repeat speed"
+button_repeat_rate = "%{rate} repeats/s"
 mouse_button_profiles = "Profils des boutons de souris"
 mouse_profile_pointer = "Pointeur de la souris"
 mouse_profile_focused = "Application au premier plan"

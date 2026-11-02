@@ -7,8 +7,9 @@ use super::{
 };
 use crate::ui::theme::Typography as _;
 use gpui_base::Button as BaseButton;
+use gpui_component::checkbox::Checkbox;
 use gpui_component::radio::{Radio, RadioGroup};
-use openlogi_core::config::MouseProfileTarget;
+use openlogi_core::config::{ButtonRepeatRate, MouseProfileTarget};
 
 use crate::platform::registration::ServiceStatus;
 
@@ -17,6 +18,7 @@ use crate::platform::registration::ServiceStatus;
 pub(super) struct SensitivitySliders {
     pub(super) vertical_scroll: Entity<SliderState>,
     pub(super) thumbwheel: Entity<SliderState>,
+    pub(super) button_repeat: Entity<SliderState>,
 }
 
 pub(super) fn general_page(
@@ -26,9 +28,18 @@ pub(super) fn general_page(
     let SensitivitySliders {
         vertical_scroll,
         thumbwheel,
+        button_repeat,
     } = sliders;
     let group = SettingGroup::new()
         .item(mouse_profile_target_item())
+        .item(
+            SettingItem::new(
+                tr!("pointer.hold_to_repeat"),
+                SettingField::render(move |_, _, cx| button_repeat_field(&button_repeat, cx)),
+            )
+            .layout(gpui::Axis::Vertical)
+            .description(tr!("pointer.hold_to_repeat_description")),
+        )
         .item(smooth_scrolling_item())
         .item(
             SettingItem::new(
@@ -97,6 +108,41 @@ pub(super) fn general_page(
         .icon(IconName::Settings)
         .resettable(false)
         .group(group)
+}
+
+fn button_repeat_field(slider: &Entity<SliderState>, cx: &mut App) -> gpui::Div {
+    let enabled = AppState::try_read(cx).is_none_or(|state| state.app_settings().hold_to_repeat);
+    let rate = ButtonRepeatRate::from_rounded(slider.read(cx).value().start());
+    let pal = theme::palette(cx);
+    v_flex()
+        .gap_3()
+        .child(
+            Checkbox::new("hold-to-repeat")
+                .debug_selector(|| "hold-to-repeat".into())
+                .label(tr!("pointer.hold_to_repeat"))
+                .checked(enabled)
+                .on_click(|enabled, _, cx| {
+                    AppState::apply(cx, |state| state.commit_hold_to_repeat(*enabled));
+                }),
+        )
+        .child(div().text_body().child(tr!("pointer.button_repeat_speed")))
+        .child(
+            h_flex()
+                .gap_3()
+                .child(
+                    div()
+                        .debug_selector(|| "button-repeat-slider".into())
+                        .w(px(180.))
+                        .child(Slider::new(slider).disabled(!enabled)),
+                )
+                .child(
+                    div()
+                        .debug_selector(|| "button-repeat-value".into())
+                        .text_body()
+                        .text_color(pal.text_muted)
+                        .child(tr!("pointer.button_repeat_rate", rate => rate.to_string())),
+                ),
+        )
 }
 
 fn mouse_profile_target_item() -> SettingItem {
@@ -309,7 +355,112 @@ mod tests {
     use gpui::{
         AppContext as _, Bounds, Modifiers, TestAppContext, VisualTestContext, point, size,
     };
-    use openlogi_core::config::{Config, UiScale};
+    use openlogi_core::config::{Appearance, Config, UiScale};
+
+    #[gpui::test]
+    fn button_repeat_controls_toggle_change_rate_and_roll_back_failed_saves(
+        cx: &mut TestAppContext,
+    ) {
+        let _locale = LOCALE_LOCK.lock().unwrap();
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            theme::register_builtin_themes(cx);
+        });
+        for (read_only, locale, scale, appearance) in [
+            (false, "en", UiScale::Normal, Appearance::Light),
+            (false, "zh-TW", UiScale::ExtraLarge, Appearance::Dark),
+            (true, "en", UiScale::Normal, Appearance::Dark),
+        ] {
+            rust_i18n::set_locale(locale);
+            let handle = cx.update(|cx| {
+                let (commands, _) = tokio::sync::mpsc::unbounded_channel();
+                let resolver = AssetResolver::new();
+                let mut config = Config::ephemeral();
+                config.app_settings.ui_scale = scale;
+                config.app_settings.appearance = appearance;
+                let mut sources = Sources::in_memory(config, &resolver, commands);
+                if read_only {
+                    sources.persistence = ConfigPersistence::ReadOnly("read-only test".into());
+                }
+                AppState::set_global(cx.new(|_| AppState::new(sources)), cx);
+                settings::open(cx);
+                cx.global::<WindowRegistry>().settings.unwrap()
+            });
+            let mut visual = VisualTestContext::from_window(handle.into(), cx);
+            visual.simulate_resize(size(px(920.), px(800.)));
+            visual.update(|window, cx| window.draw(cx).clear(cx));
+            let checkbox = visual.debug_bounds("hold-to-repeat").unwrap();
+            let slider = visual.debug_bounds("button-repeat-slider").unwrap();
+            assert!(slider.top() >= checkbox.bottom());
+            let viewport = Bounds::new(point(px(0.), px(0.)), size(px(920.), px(800.)));
+            for bounds in [
+                checkbox,
+                slider,
+                visual.debug_bounds("button-repeat-value").unwrap(),
+            ] {
+                assert!(
+                    viewport.contains(&bounds.origin) && viewport.contains(&bounds.bottom_right())
+                );
+            }
+            let fast = point(slider.right() - px(1.), slider.center().y);
+            let expected_rate = if read_only {
+                ButtonRepeatRate::DEFAULT
+            } else {
+                ButtonRepeatRate::MAX
+            };
+            visual.simulate_click(fast, Modifiers::default());
+            visual.update(|window, cx| {
+                window.draw(cx).clear(cx);
+                assert_eq!(
+                    AppState::try_read(cx)
+                        .unwrap()
+                        .app_settings()
+                        .button_repeat_rate,
+                    expected_rate
+                );
+            });
+            visual.simulate_click(checkbox.center(), Modifiers::default());
+            visual.update(|window, cx| {
+                window.draw(cx).clear(cx);
+                assert_eq!(
+                    AppState::try_read(cx)
+                        .unwrap()
+                        .app_settings()
+                        .hold_to_repeat,
+                    read_only
+                );
+            });
+            visual.simulate_click(slider.origin, Modifiers::default());
+            visual.update(|window, cx| {
+                window.draw(cx).clear(cx);
+                assert_eq!(
+                    AppState::try_read(cx)
+                        .unwrap()
+                        .app_settings()
+                        .button_repeat_rate,
+                    expected_rate
+                );
+                if read_only {
+                    assert_eq!(
+                        AppState::try_read(cx).unwrap().config_issue(),
+                        Some("read-only test")
+                    );
+                }
+            });
+            visual.simulate_click(checkbox.center(), Modifiers::default());
+            visual.update(|window, cx| {
+                window.draw(cx).clear(cx);
+                assert!(
+                    AppState::try_read(cx)
+                        .unwrap()
+                        .app_settings()
+                        .hold_to_repeat
+                );
+                window.remove_window();
+            });
+        }
+        rust_i18n::set_locale("en");
+    }
 
     #[gpui::test]
     fn mouse_profile_target_choices_update_state_and_respect_failed_saves(cx: &mut TestAppContext) {

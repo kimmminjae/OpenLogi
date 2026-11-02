@@ -474,6 +474,33 @@ mod tests {
     }
 
     #[test]
+    fn hold_to_repeat_volume_buttons_capture_both_physical_edges() {
+        let mut cfg = Config::default();
+        cfg.set_binding("2b01a", ButtonId::Back, Binding::Single(Action::VolumeUp));
+        cfg.set_binding(
+            "2b01a",
+            ButtonId::Forward,
+            Binding::Single(Action::VolumeDown),
+        );
+        let plan = plan_for_device(&cfg, "2b01a", route(), None, 0, true);
+        assert!(diverts(&plan, ButtonId::Back));
+        assert!(diverts(&plan, ButtonId::Forward));
+        assert_eq!(
+            plan.dispatch.bindings.get(&ButtonId::Back),
+            Some(&Binding::Single(Action::VolumeUp))
+        );
+        assert_eq!(
+            plan.dispatch.bindings.get(&ButtonId::Forward),
+            Some(&Binding::Single(Action::VolumeDown))
+        );
+
+        cfg.app_settings.capture_mouse_events = false;
+        let opted_out = plan_for_device(&cfg, "2b01a", route(), None, 0, true);
+        assert!(!diverts(&opted_out, ButtonId::Back));
+        assert!(!diverts(&opted_out, ButtonId::Forward));
+    }
+
+    #[test]
     fn long_press_is_diverted_even_when_its_short_action_matches_the_native_default() {
         let mut cfg = Config::default();
         cfg.set_binding(

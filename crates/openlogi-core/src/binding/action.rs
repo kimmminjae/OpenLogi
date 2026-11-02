@@ -449,6 +449,21 @@ macro_rules! derive_action_core {
 for_each_unit_action!(derive_action_core);
 
 impl Action {
+    /// Whether a single-action button binding repeats while physically held.
+    /// Toggles, shortcuts, and other one-shot actions never repeat.
+    #[must_use]
+    pub const fn is_repeatable(&self) -> bool {
+        matches!(
+            self,
+            Self::VolumeUp
+                | Self::VolumeDown
+                | Self::ScrollUp
+                | Self::ScrollDown
+                | Self::HorizontalScrollLeft
+                | Self::HorizontalScrollRight
+        )
+    }
+
     /// The chord whose output must remain down until the originating press
     /// ends, together with which of its keys stay down. `None` for an
     /// instantaneous action.

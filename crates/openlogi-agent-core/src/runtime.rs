@@ -389,6 +389,12 @@ impl ActionRuntime {
 }
 
 impl ActionDispatcher {
+    /// Publish held-button preferences and cancel presses using the previous
+    /// settings. The next physical press uses the new steady rate.
+    pub fn configure_button_repeat(&self, settings: &openlogi_core::config::AppSettings) {
+        self.buttons.configure_repeat(settings);
+    }
+
     /// Route one action without blocking the input callback.
     pub fn dispatch(&self, action: &Action, device_key: Option<&str>) {
         self.executor.dispatch(action, device_key);
