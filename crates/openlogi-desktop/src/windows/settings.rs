@@ -34,7 +34,8 @@ pub(super) use gpui_component::{
 pub(super) use gpui_updater::{UpdateStatus, Updater};
 pub(super) use openlogi_core::brand::{HELP_URL, RELEASES_URL, REPO_URL};
 pub(super) use openlogi_core::config::{
-    Appearance, AssetSourcePreference, ThumbwheelSensitivity, UiScale, VerticalScrollSensitivity,
+    Appearance, AssetSourcePreference, ButtonRepeatRate, ThumbwheelSensitivity, UiScale,
+    VerticalScrollSensitivity,
 };
 
 pub(super) use crate::app::menu::{CloseWindow, Minimize, Zoom};
@@ -124,6 +125,7 @@ pub struct SettingsView {
     asset_source_select: Entity<SelectState<Vec<assets::AssetSourceOption>>>,
     thumbwheel_sensitivity: CommitSlider<ThumbwheelSensitivity>,
     vertical_scroll_sensitivity: CommitSlider<VerticalScrollSensitivity>,
+    button_repeat_rate: CommitSlider<ButtonRepeatRate>,
     /// Shared app-wide updater, surfaced on the Updates page. A launch-time
     /// check result is already visible when the window opens.
     updater: Entity<Updater>,
@@ -219,6 +221,7 @@ impl SettingsView {
 
         let thumbwheel_sensitivity = Self::thumbwheel_sensitivity_slider(cx);
         let vertical_scroll_sensitivity = Self::vertical_scroll_sensitivity_slider(cx);
+        let button_repeat_rate = Self::button_repeat_slider(cx);
 
         // Poll the agent's live event monitor while this window is open. The task
         // is held in the view, so closing Settings drops it, polling stops, and
@@ -262,6 +265,7 @@ impl SettingsView {
             asset_source_select,
             thumbwheel_sensitivity,
             vertical_scroll_sensitivity,
+            button_repeat_rate,
             updater,
             updater_obs,
             copied: false,
@@ -287,6 +291,20 @@ impl SettingsView {
                 this.refresh_registration_status(cx);
             }
         })
+    }
+
+    fn button_repeat_slider(cx: &mut Context<Self>) -> CommitSlider<ButtonRepeatRate> {
+        let rate = AppState::try_read(cx).map_or(ButtonRepeatRate::DEFAULT, |state| {
+            state.app_settings().button_repeat_rate
+        });
+        CommitSlider::new(
+            SliderRange::new(ButtonRepeatRate::MIN, ButtonRepeatRate::MAX),
+            rate,
+            cx,
+            |_, rate, cx| {
+                AppState::apply(cx, |state| state.commit_button_repeat_rate(rate));
+            },
+        )
     }
 
     /// The thumb-wheel sensitivity slider. The label tracks the live slider
@@ -420,13 +438,15 @@ impl Render for SettingsView {
         // these independently owned sliders so neither can keep presenting the
         // rejected value after that rollback.
         if let Some(settings) = AppState::try_read(cx).map(AppState::app_settings) {
-            let (vertical_scroll, thumbwheel) = (
+            let (vertical_scroll, thumbwheel, button_repeat) = (
                 settings.vertical_scroll_sensitivity,
                 settings.thumbwheel_sensitivity,
+                settings.button_repeat_rate,
             );
             self.vertical_scroll_sensitivity
                 .sync(vertical_scroll, window, cx);
             self.thumbwheel_sensitivity.sync(thumbwheel, window, cx);
+            self.button_repeat_rate.sync(button_repeat, window, cx);
         }
         let pal = theme::palette(cx);
         let view = cx.entity();
@@ -451,6 +471,7 @@ impl Render for SettingsView {
                 general::SensitivitySliders {
                     vertical_scroll: self.vertical_scroll_sensitivity.slider().clone(),
                     thumbwheel: self.thumbwheel_sensitivity.slider().clone(),
+                    button_repeat: self.button_repeat_rate.slider().clone(),
                 },
                 self.registration_status,
             ))

@@ -49,6 +49,7 @@ pub(crate) struct Core {
 /// ahead of the watchers and prompts lets a dormant agent hear demand, and
 /// keeps a first-run consent dialog from blackholing the GUI's connect.
 pub(crate) async fn bootstrap(config: Config) -> Option<Core> {
+    let button_settings = config.app_settings.clone();
     // The orchestrator is shared with the IPC server and mutated by the
     // select loop, so it lives behind an async mutex; locks are brief. The
     // hook facts are published by the select loop, which owns the hook.
@@ -61,6 +62,7 @@ pub(crate) async fn bootstrap(config: Config) -> Option<Core> {
     )));
     let shared = orchestrator.lock().await.shared();
     let inputs = InputServices::start(&shared)?;
+    inputs.dispatcher.configure_button_repeat(&button_settings);
     let backlight_overlay = BacklightOverlayManager::default();
 
     // Shared between the hook callback (which mirrors events into it) and

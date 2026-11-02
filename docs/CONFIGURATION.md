@@ -41,10 +41,12 @@ profiles so they keep their native direction. v9 adds the `[apps]` alias table;
 v8 files load unchanged.
 v10 adds the per-device `disabled_keys` policy. Older readers reject a v10
 header before parsing its fields. A v9 file without the policy still loads.
+v11 adds the app-wide `hold_to_repeat` and `button_repeat_rate` preferences.
+Older files default to enabled at twenty repeats per second.
 
 ## Shape
 
-`schema_version` is required and currently `10`. `selected_device` is an
+`schema_version` is required and currently `11`. `selected_device` is an
 optional physical device key.
 
 `[app_settings]` contains application-wide preferences:
@@ -61,6 +63,13 @@ optional physical device key.
 - `vertical_scroll_sensitivity`, from `1` through `100` (`14` is 1×);
   continuous trackpad input remains native
 - `thumbwheel_sensitivity`, from `1` through `100` (`14` is 1×)
+- `hold_to_repeat` (default `true`) enables continuous repetition while a
+  button mapped to volume or scrolling stays down. Turning it off leaves one
+  action per press. `button_repeat_rate`, from `2` through `50` (default `20`),
+  sets repeats per second after the 400 ms hold threshold. Both are in
+  **Settings → General**. The rate is a software action rate, not hardware
+  polling; changing either setting cancels an ongoing hold and applies from
+  the next press. The speed is retained while repetition is disabled.
 - `mouse_profile_target`: `pointer` (default, including existing configs that
   omit this preference) or `focused`. Mouse button profiles follow the window
   under the pointer; the desktop uses the global bindings. Keyboard profiles
@@ -427,6 +436,17 @@ modifier): a letter, a digit, `` - = [ ] \ ; ' ` , . / ``, `F1` to `F20`,
 `Right`, `Up`, `Down`, and the editing keys `Insert` (`Ins`), `Delete` (`Del`),
 `Home`, `End`, `PageUp` (`PgUp`), and `PageDown` (`PgDn`). Names are
 case-insensitive. On macOS, `Insert` presses the Help key.
+
+Single-action button bindings for `VolumeUp`, `VolumeDown`, `ScrollUp`,
+`ScrollDown`, `HorizontalScrollLeft`, and `HorizontalScrollRight` fire once
+on press and, with `hold_to_repeat` enabled, repeat while the button stays down.
+A tap remains one step; holding starts repeating after 400 ms at the steady
+`button_repeat_rate`. Release, capture interruption, device disconnect,
+or a binding/profile/settings change stops repetition. Assign the ordinary
+Volume Up/Down or scroll action in the button picker.
+Firmware inputs that report only an instantaneous pulse still fire once.
+Gesture directions, gesture clicks, short/long pairs, and wheel-hold clicks
+keep their existing semantics; toggles and custom shortcuts do not repeat.
 
 `CustomShortcut` emits an immediate key-down/key-up pair. `HoldShortcut` keeps
 the chord down until the originating physical button is released, and also

@@ -6,12 +6,32 @@ use super::{AppState, StateEvent};
 use crate::platform::app_icon::AppIconExt as _;
 use gpui_component::ThemeMode;
 use openlogi_core::config::{
-    AppIcon, AppSettings, Appearance, AssetSourcePreference, DeviceViewMode, MouseProfileTarget,
-    ThumbwheelSensitivity, UiScale, VerticalScrollSensitivity,
+    AppIcon, AppSettings, Appearance, AssetSourcePreference, ButtonRepeatRate, DeviceViewMode,
+    MouseProfileTarget, ThumbwheelSensitivity, UiScale, VerticalScrollSensitivity,
 };
 use openlogi_core::update_feed::UpdateChannel;
 
 impl AppState {
+    /// Persist the repeat toggle; rejected writes restore the saved preference.
+    pub fn commit_hold_to_repeat(&mut self, enabled: bool) -> StateEvents {
+        if self.config.app_settings.hold_to_repeat != enabled {
+            self.config
+                .edit(|config| config.app_settings.hold_to_repeat = enabled);
+            self.persist_and_reload("hold to repeat");
+        }
+        StateEvent::SettingsChanged.into()
+    }
+
+    /// Persist the steady repeat rate and request an agent reload once.
+    pub fn commit_button_repeat_rate(&mut self, rate: ButtonRepeatRate) -> StateEvents {
+        if self.config.app_settings.button_repeat_rate != rate {
+            self.config
+                .edit(|config| config.app_settings.button_repeat_rate = rate);
+            self.persist_and_reload("button repeat rate");
+        }
+        StateEvent::SettingsChanged.into()
+    }
+
     /// App-wide settings backing the Settings window (launch-at-login,
     /// update check). Read-only view; mutate via the `commit_*` methods below
     /// so the change is persisted.

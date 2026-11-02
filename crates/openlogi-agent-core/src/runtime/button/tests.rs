@@ -1,5 +1,7 @@
 //! Regression tests for the source-independent button lifecycle.
 
+mod repeat;
+
 use std::time::Instant;
 
 use openlogi_core::binding::{LongPressBinding, WheelHoldBinding};
@@ -25,7 +27,11 @@ fn wheel_hold(click: Action) -> Binding {
 fn hook_press_bound(id: u64, binding: &Binding) -> ActivePress {
     ActivePress {
         token: PressToken::hook_for_test(id, ButtonId::Back),
-        behavior: PressBehavior::new(Some(binding), Instant::now()),
+        behavior: PressBehavior::new(
+            Some(binding),
+            Instant::now(),
+            Some(ButtonRepeatRate::DEFAULT),
+        ),
         target: ActionDispatchTarget::Keyboard,
     }
 }
@@ -75,13 +81,13 @@ fn recv_event(receiver: &mpsc::Receiver<ButtonRuntimeEvent>) -> ButtonRuntimeEve
         .expect("button worker should emit an event")
 }
 
-fn emit_due_long_presses(
+fn emit_due_timers(
     state: &mut ButtonState,
     now: Instant,
     emit: &mut impl FnMut(ButtonRuntimeEvent),
 ) {
-    let due_presses = state.due_long_presses(now);
-    emit_selected_long_presses(state, &due_presses, now, emit);
+    let due_presses = state.due_presses(now);
+    emit_selected_timers(state, &due_presses, now, emit);
 }
 
 #[test]
@@ -632,7 +638,7 @@ fn release_before_long_press_threshold_fires_only_the_short_action() {
     let pressed_at = Instant::now();
     let press = ActivePress {
         token: PressToken::hook_for_test(1, ButtonId::Back),
-        behavior: PressBehavior::new(Some(&binding), pressed_at),
+        behavior: PressBehavior::new(Some(&binding), pressed_at, Some(ButtonRepeatRate::DEFAULT)),
         target: ActionDispatchTarget::Keyboard,
     };
     state.press(press.clone());
@@ -671,18 +677,18 @@ fn threshold_fires_long_once_and_suppresses_short_on_release() {
     let pressed_at = Instant::now();
     let press = ActivePress {
         token: PressToken::hook_for_test(1, ButtonId::Back),
-        behavior: PressBehavior::new(Some(&binding), pressed_at),
+        behavior: PressBehavior::new(Some(&binding), pressed_at, Some(ButtonRepeatRate::DEFAULT)),
         target: ActionDispatchTarget::Keyboard,
     };
     state.press(press.clone());
     let mut events = Vec::new();
 
-    emit_due_long_presses(
+    emit_due_timers(
         &mut state,
         pressed_at + LONG_PRESS_THRESHOLD,
         &mut |event| events.push(event),
     );
-    emit_due_long_presses(
+    emit_due_timers(
         &mut state,
         pressed_at + LONG_PRESS_THRESHOLD + Duration::from_secs(1),
         &mut |event| events.push(event),
@@ -720,7 +726,7 @@ fn cancellation_never_fires_a_pending_short_or_long_action() {
     let pressed_at = Instant::now();
     let press = ActivePress {
         token: PressToken::hook_for_test(1, ButtonId::Back),
-        behavior: PressBehavior::new(Some(&binding), pressed_at),
+        behavior: PressBehavior::new(Some(&binding), pressed_at, Some(ButtonRepeatRate::DEFAULT)),
         target: ActionDispatchTarget::Keyboard,
     };
     state.press(press);
@@ -731,7 +737,7 @@ fn cancellation_never_fires_a_pending_short_or_long_action() {
         CancelReason::Invalidated,
         &mut |event| events.push(event),
     );
-    emit_due_long_presses(
+    emit_due_timers(
         &mut state,
         pressed_at + LONG_PRESS_THRESHOLD,
         &mut |event| events.push(event),
@@ -831,7 +837,7 @@ fn the_worker_waits_only_for_the_earliest_pending_long_press_threshold() {
     let pressed_later = pressed_at + Duration::from_millis(100);
     let long_press_on = |id, button, at| ActivePress {
         token: PressToken::hook_for_test(id, button),
-        behavior: PressBehavior::new(Some(&binding), at),
+        behavior: PressBehavior::new(Some(&binding), at, Some(ButtonRepeatRate::DEFAULT)),
         target: ActionDispatchTarget::Keyboard,
     };
     let mut state = ButtonState::default();
@@ -853,7 +859,7 @@ fn the_worker_waits_only_for_the_earliest_pending_long_press_threshold() {
     );
 
     let mut events = Vec::new();
-    emit_due_long_presses(
+    emit_due_timers(
         &mut state,
         pressed_at + LONG_PRESS_THRESHOLD,
         &mut |event| {
@@ -1003,7 +1009,7 @@ fn overdue_long_press_precedes_unrelated_queued_actions() {
     let mut state = ButtonState::default();
     let press = ActivePress {
         token: PressToken::hook_for_test(1, ButtonId::Back),
-        behavior: PressBehavior::new(Some(&binding), pressed_at),
+        behavior: PressBehavior::new(Some(&binding), pressed_at, Some(ButtonRepeatRate::DEFAULT)),
         target: ActionDispatchTarget::Keyboard,
     };
     state.press(press.clone());
@@ -1027,7 +1033,7 @@ fn overdue_long_press_precedes_unrelated_queued_actions() {
     let mut generation = 0;
     let mut events = Vec::new();
 
-    assert!(!settle_due_long_presses(
+    assert!(!settle_due_timers(
         &queued,
         &shutdown,
         &shared_generation,
@@ -1065,7 +1071,11 @@ fn continuous_commands_cannot_starve_a_long_press_deadline() {
             generation: 0,
             input: ButtonInput::Down(ActivePress {
                 token: PressToken::hook_for_test(1, ButtonId::Back),
-                behavior: PressBehavior::new(Some(&binding), pressed_at),
+                behavior: PressBehavior::new(
+                    Some(&binding),
+                    pressed_at,
+                    Some(ButtonRepeatRate::DEFAULT),
+                ),
                 target: ActionDispatchTarget::Keyboard,
             }),
         })

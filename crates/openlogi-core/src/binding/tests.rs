@@ -45,6 +45,40 @@ fn catalog_excludes_custom_shortcut() {
 }
 
 #[test]
+fn repeatable_actions_are_only_volume_and_directional_scroll_steps() {
+    let expected = [
+        Action::VolumeUp,
+        Action::VolumeDown,
+        Action::ScrollUp,
+        Action::ScrollDown,
+        Action::HorizontalScrollLeft,
+        Action::HorizontalScrollRight,
+    ];
+    for action in Action::catalog() {
+        assert_eq!(
+            action.is_repeatable(),
+            expected.contains(&action),
+            "{action:?}"
+        );
+    }
+    for action in expected {
+        assert!(action.is_repeatable(), "{action:?}");
+        assert!(Action::catalog().contains(&action), "{action:?}");
+    }
+    let combo: KeyCombo = "Ctrl+Space".parse().expect("valid shortcut");
+    for action in [
+        Action::None,
+        Action::CustomShortcut(combo.clone()),
+        Action::HoldShortcut(combo.clone()),
+        Action::TapKeyHoldingModifiers(combo),
+        Action::RunShellCommand("echo once".into()),
+        Action::SetDpiPreset(0),
+    ] {
+        assert!(!action.is_repeatable(), "{action:?}");
+    }
+}
+
+#[test]
 fn hold_shortcut_has_distinct_lifecycle_semantics() {
     let combo: KeyCombo = "Alt+Space".parse().expect("valid shortcut failed");
     let held = Action::HoldShortcut(combo.clone());

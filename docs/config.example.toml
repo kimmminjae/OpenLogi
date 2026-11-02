@@ -1,5 +1,5 @@
 # OpenLogi configuration example. Copy only the sections you need.
-schema_version = 10
+schema_version = 11
 selected_device = "receiver:aabbccdd:slot:1"
 
 [app_settings]
@@ -11,6 +11,9 @@ capture_mouse_events = true
 # Mouse button profiles: "pointer" (default) or "focused".
 mouse_profile_target = "pointer"
 smooth_scroll = false
+# Hold mapped volume/scroll buttons to repeat after 400 ms; rate is 2..=50 per second.
+hold_to_repeat = true
+button_repeat_rate = 20
 vertical_scroll_sensitivity = 14
 auto_download_assets = true
 asset_source = "automatic"

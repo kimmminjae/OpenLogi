@@ -239,6 +239,10 @@ select_device_button_description = "Select a button on the device to change what
 remove_profile_description = "This deletes the custom button bindings in this profile. Default bindings are not affected."
 
 [pointer]
+hold_to_repeat = "Repeat while holding"
+hold_to_repeat_description = "Hold a mapped volume or scroll button to repeat after 400 ms. Applies to all devices; taps still perform one step."
+button_repeat_speed = "Repeat speed"
+button_repeat_rate = "%{rate} repeats/s"
 mouse_button_profiles = "Mouse button profiles"
 mouse_profile_pointer = "Mouse pointer"
 mouse_profile_focused = "Focused application"

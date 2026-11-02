@@ -9,12 +9,13 @@
 use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle, ThreadId};
 use std::time::{Duration, Instant};
 
 use openlogi_core::binding::{Action, Binding, ButtonId, LONG_PRESS_THRESHOLD};
+use openlogi_core::config::{AppSettings, ButtonRepeatRate};
 use tracing::warn;
 
 use super::ActionDispatchTarget;
@@ -28,10 +29,12 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct CaptureEpoch(u64);
 
+mod repeat;
 mod worker;
+use repeat::RepeatSchedule;
 use worker::run_worker;
 #[cfg(test)]
-use worker::{emit_canceled, emit_selected_long_presses, process_input, settle_due_long_presses};
+use worker::{emit_canceled, emit_selected_timers, process_input, settle_due_timers};
 
 /// A capture epoch bound to the config namespace its actions currently use.
 /// The namespace can hot-swap while the epoch remains the task's stable input
@@ -148,8 +151,8 @@ impl PressKey {
 struct PressId(u64);
 
 /// Capability used to run a gesture action only while its originating press
-/// remains active. Future timers and repeat workers can use the same token to
-/// reject work scheduled by a superseded press.
+/// remains active. Timers use the same token to reject work scheduled by a
+/// superseded press.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct PressToken {
     id: PressId,
@@ -183,6 +186,11 @@ enum PressBehavior {
     LifecycleOnly,
     /// Existing behavior: fire once when the press starts.
     Immediate(Action),
+    /// Fire on press, then repeat only while this exact press stays active.
+    Repeating {
+        action: Action,
+        schedule: RepeatSchedule,
+    },
     /// Wait for either release or the threshold, whichever occurs first.
     LongPressPending {
         short: Action,
@@ -199,10 +207,25 @@ enum PressBehavior {
 }
 
 impl PressBehavior {
-    fn new(binding: Option<&Binding>, pressed_at: Instant) -> Self {
+    fn new(
+        binding: Option<&Binding>,
+        pressed_at: Instant,
+        repeat_rate: Option<ButtonRepeatRate>,
+    ) -> Self {
         match binding {
             None => Self::LifecycleOnly,
-            Some(Binding::Single(action)) => Self::Immediate(action.clone()),
+            Some(Binding::Single(action)) => {
+                if action.is_repeatable()
+                    && let Some(rate) = repeat_rate
+                {
+                    Self::Repeating {
+                        action: action.clone(),
+                        schedule: RepeatSchedule::new(pressed_at, rate),
+                    }
+                } else {
+                    Self::Immediate(action.clone())
+                }
+            }
             Some(binding @ Binding::Gesture(_)) => Self::Immediate(binding.click_action()),
             Some(Binding::LongPress(binding)) => Self::LongPressPending {
                 short: binding.short().clone(),
@@ -218,6 +241,7 @@ impl PressBehavior {
     fn deadline(&self) -> Option<Instant> {
         match self {
             Self::LongPressPending { deadline, .. } => Some(*deadline),
+            Self::Repeating { schedule, .. } => Some(schedule.deadline()),
             Self::LifecycleOnly
             | Self::Immediate(_)
             | Self::LongPressFired
@@ -228,7 +252,7 @@ impl PressBehavior {
 
     fn start_action(&self) -> Option<&Action> {
         match self {
-            Self::Immediate(action) => Some(action),
+            Self::Immediate(action) | Self::Repeating { action, .. } => Some(action),
             Self::LifecycleOnly
             | Self::LongPressPending { .. }
             | Self::LongPressFired
@@ -243,6 +267,7 @@ impl PressBehavior {
             Self::WheelHoldPending { click } => Some(click),
             Self::LifecycleOnly
             | Self::Immediate(_)
+            | Self::Repeating { .. }
             | Self::LongPressFired
             | Self::WheelHoldScrolled => None,
         }
@@ -266,6 +291,13 @@ impl PressBehavior {
         let action = long.clone();
         *self = Self::LongPressFired;
         Some(action)
+    }
+
+    fn fire_timer(&mut self, now: Instant) -> Option<Action> {
+        if let Self::Repeating { action, schedule } = self {
+            return schedule.fire_due(now).then(|| action.clone());
+        }
+        self.fire_long(now)
     }
 }
 
@@ -433,7 +465,7 @@ impl ButtonState {
             .collect()
     }
 
-    fn fire_selected_long_presses(
+    fn fire_selected_timers(
         &mut self,
         tokens: &[PressToken],
         now: Instant,
@@ -445,13 +477,15 @@ impl ButtonState {
                 if press.token != *token {
                     return None;
                 }
-                press.fire_long(now).map(|action| (press.clone(), action))
+                press
+                    .behavior
+                    .fire_timer(now)
+                    .map(|action| (press.clone(), action))
             })
             .collect()
     }
 
-    /// The earliest long-press threshold still pending, which is the only
-    /// reason the worker has to wake without a command.
+    /// The earliest long-press or repeat deadline still pending.
     fn next_deadline(&self) -> Option<Instant> {
         self.active
             .values()
@@ -459,11 +493,11 @@ impl ButtonState {
             .min()
     }
 
-    fn has_due_long_press(&self, now: Instant) -> bool {
+    fn has_due_timer(&self, now: Instant) -> bool {
         self.next_deadline().is_some_and(|deadline| deadline <= now)
     }
 
-    fn due_long_presses(&self, now: Instant) -> Vec<PressToken> {
+    fn due_presses(&self, now: Instant) -> Vec<PressToken> {
         self.active
             .values()
             .filter(|press| {
@@ -496,9 +530,32 @@ pub(crate) struct ButtonInputHandle {
     generation: Arc<AtomicU64>,
     accepting: Arc<AtomicBool>,
     next_press: Arc<AtomicU64>,
+    /// Zero means disabled; a validated nonzero value is repeats per second.
+    repeat_rate: Arc<AtomicU8>,
 }
 
 impl ButtonInputHandle {
+    pub(crate) fn configure_repeat(&self, settings: &AppSettings) {
+        let rate = if settings.hold_to_repeat {
+            u8::from(settings.button_repeat_rate)
+        } else {
+            0
+        };
+        if self.repeat_rate.swap(rate, Ordering::AcqRel) != rate {
+            self.invalidate_all();
+        }
+    }
+
+    fn repeat_rate(&self) -> Option<ButtonRepeatRate> {
+        match self.repeat_rate.load(Ordering::Acquire) {
+            0 => None,
+            raw => match ButtonRepeatRate::try_new(raw) {
+                Ok(rate) => Some(rate),
+                Err(_) => unreachable!("repeat settings are published from validated config"),
+            },
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn try_hook_down(
         &self,
@@ -591,7 +648,7 @@ impl ButtonInputHandle {
         let generation = self.generation.load(Ordering::Acquire);
         let press = self.new_press(
             PressKey::new(ButtonSource::Hidpp(session.clone()), button),
-            PressBehavior::new(binding, Instant::now()),
+            PressBehavior::new(binding, Instant::now(), self.repeat_rate()),
             generation,
             target,
         );
@@ -659,7 +716,7 @@ impl ButtonInputHandle {
         let generation = self.generation.load(Ordering::Acquire);
         let press = self.new_press(
             PressKey::new(source, button),
-            PressBehavior::new(binding, Instant::now()),
+            PressBehavior::new(binding, Instant::now(), self.repeat_rate()),
             generation,
             target,
         );
@@ -751,6 +808,7 @@ impl ButtonRuntimeOwner {
             generation: Arc::clone(&generation),
             accepting: Arc::new(AtomicBool::new(true)),
             next_press: Arc::new(AtomicU64::new(1)),
+            repeat_rate: Arc::new(AtomicU8::new(u8::from(ButtonRepeatRate::DEFAULT))),
         };
         let worker = thread::Builder::new()
             .name("openlogi-buttons".into())

@@ -1,4 +1,4 @@
-//! The button runtime's worker thread: draining commands and inputs, settling long presses, and emitting the events the owner subscribed to.
+//! The button runtime's worker thread: draining inputs, settling timers, and emitting lifecycle events.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use super::{
     ActivePress, ButtonCommand, ButtonInput, ButtonRuntimeEvent, ButtonState, CancelReason,
-    EVENT_QUEUE_CAPACITY, EndReason, PressBehavior, PressToken, ShutdownRequest,
+    EVENT_QUEUE_CAPACITY, EndReason, PressToken, ShutdownRequest,
 };
 use crate::runtime::receive_command;
 
@@ -23,11 +23,11 @@ pub(super) fn run_worker(
             return;
         }
         // Shutdown and invalidation arrive with a `Wake`, so only a pending
-        // long-press threshold is a reason to stop waiting without a command.
+        // button timer is a reason to stop waiting without a command.
         let command = match receive_command(events, state.next_deadline()) {
             Ok(command) => command,
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                if settle_due_long_presses(
+                if settle_due_timers(
                     events,
                     shutdown,
                     shared_generation,
@@ -46,8 +46,8 @@ pub(super) fn run_worker(
             }
         };
         synchronize_generation(&mut state, shared_generation, &mut generation, emit);
-        if state.has_due_long_press(Instant::now()) {
-            if settle_due_long_presses(
+        if state.has_due_timer(Instant::now()) {
+            if settle_due_timers(
                 events,
                 shutdown,
                 shared_generation,
@@ -61,7 +61,7 @@ pub(super) fn run_worker(
             continue;
         }
         process_command(&mut state, command, generation, emit);
-        if settle_due_long_presses(
+        if settle_due_timers(
             events,
             shutdown,
             shared_generation,
@@ -115,7 +115,7 @@ fn process_command(
     }
 }
 
-pub(super) fn settle_due_long_presses(
+pub(super) fn settle_due_timers(
     events: &mpsc::Receiver<ButtonCommand>,
     shutdown: &mpsc::Receiver<ShutdownRequest>,
     shared_generation: &AtomicU64,
@@ -130,7 +130,7 @@ pub(super) fn settle_due_long_presses(
     // An event handler may have blocked while another thread invalidated
     // this generation. Observe that transition before any overdue timer.
     synchronize_generation(state, shared_generation, generation, emit);
-    let due_presses = state.due_long_presses(Instant::now());
+    let due_presses = state.due_presses(Instant::now());
     if due_presses.is_empty() {
         if let Some(command) = first_command {
             process_command(state, command, *generation, emit);
@@ -191,7 +191,7 @@ pub(super) fn settle_due_long_presses(
         });
     }
 
-    emit_selected_long_presses(state, &due_presses, Instant::now(), &mut |event| {
+    emit_selected_timers(state, &due_presses, Instant::now(), &mut |event| {
         deferred.push(event);
     });
     emit_settled_events(deferred, &due_presses, emit);
@@ -224,10 +224,7 @@ fn emit_settled_events(
     let (deadline_events, ordered_events): (Vec<_>, Vec<_>) =
         events.into_iter().partition(|event| match event {
             ButtonRuntimeEvent::Triggered { press, .. }
-            | ButtonRuntimeEvent::Ended { press, .. } => {
-                matches!(press.behavior, PressBehavior::LongPressFired)
-                    && due_presses.contains(press.token())
-            }
+            | ButtonRuntimeEvent::Ended { press, .. } => due_presses.contains(press.token()),
             ButtonRuntimeEvent::Started(_) => false,
         });
     for event in deadline_events.into_iter().chain(ordered_events) {
@@ -308,13 +305,13 @@ pub(super) fn process_input(
     }
 }
 
-pub(super) fn emit_selected_long_presses(
+pub(super) fn emit_selected_timers(
     state: &mut ButtonState,
     tokens: &[PressToken],
     now: Instant,
     emit: &mut impl FnMut(ButtonRuntimeEvent),
 ) {
-    for (press, action) in state.fire_selected_long_presses(tokens, now) {
+    for (press, action) in state.fire_selected_timers(tokens, now) {
         emit(ButtonRuntimeEvent::Triggered { press, action });
     }
 }
