@@ -207,12 +207,46 @@ run `OpenLogi.exe`; keep the agent, overlay, `bin` folder, and
 and [SHA256SUMS](https://github.com/kimmminjae/OpenLogi/releases/download/hold-repeat-931c62ac/SHA256SUMS)
 are available with the downloads. Checksums detect corruption, not publisher identity.
 
-### Other platforms
+### Custom hold-to-repeat build (Linux x86_64)
 
-Custom binaries for macOS, Linux, and Windows ARM64 are not available. To use
-these changes on another platform, build this fork's PR branch from source using
-[DEVELOPMENT.md](docs/DEVELOPMENT.md). Upstream downloads, Homebrew, and distribution
-packages do not include this fork's unmerged changes.
+These packages contain the same hold-only application changes as the Windows
+downloads above. They were built on Windows using Docker Desktop's Linux engine
+and Ubuntu 22.04; a separate physical Linux machine is not required.
+
+| Distribution | Download |
+| --- | --- |
+| Debian / Ubuntu | [`.deb` (amd64)](https://github.com/kimmminjae/OpenLogi/releases/download/hold-repeat-linux-931c62ac/openlogi_0.8.18_amd64.deb) |
+| RPM-based distributions | [`.rpm` (x86_64)](https://github.com/kimmminjae/OpenLogi/releases/download/hold-repeat-linux-931c62ac/openlogi-0.8.18-1.x86_64.rpm) |
+| Arch Linux | [`.pkg.tar.zst` (x86_64)](https://github.com/kimmminjae/OpenLogi/releases/download/hold-repeat-linux-931c62ac/openlogi-0.8.18-1-x86_64.pkg.tar.zst) |
+
+[Linux release notes](https://github.com/kimmminjae/OpenLogi/releases/tag/hold-repeat-linux-931c62ac)
+and [SHA256SUMS](https://github.com/kimmminjae/OpenLogi/releases/download/hold-repeat-linux-931c62ac/SHA256SUMS)
+are available with the downloads. These custom packages are **unsigned**, require
+GLIBC 2.35 or newer, and have no minisign signatures. The standard updater caveat
+above also applies.
+
+The Linux button-lifecycle tests passed, package payloads were checked, and the CLI
+ran in the build container. Graphical sessions, device access, and installation on
+the target distributions have not been runtime-tested.
+
+### Building on Windows and macOS availability
+
+Windows builds run natively on Windows. Linux builds can run on a Windows machine
+inside WSL2 or a Linux container with the dependencies in
+[DEVELOPMENT.md](docs/DEVELOPMENT.md); `cargo xtask linux package` produces the
+Linux packages. This is a Linux build environment running on Windows, not native
+Windows cross-compilation.
+
+macOS installers cannot be built natively on Windows with this repository's
+supported toolchain: they require **macOS with Xcode 26+ and its Metal toolchain**.
+You do not need to own a Mac if you use a hosted macOS runner. The repository's
+Build workflow already supports macOS runners, but no custom macOS binary is
+available here yet.
+
+Linux and Windows ARM64 custom binaries are also not available. To build other
+targets, use this fork's PR branch and [DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Upstream downloads, Homebrew, and distribution packages do not include this
+fork's unmerged changes.
 
 ## Usage (CLI)
 
